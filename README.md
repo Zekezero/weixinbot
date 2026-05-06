@@ -130,10 +130,11 @@ if __name__ == "__main__":
 ### 自定义指令
 
 ```python
+# 接在 echo bot 示例之后，假设已有 bot 实例
 from weixin_bot.models import WeixinMsgDTO
 
 @bot.command("hello", description="打招呼")
-async def cmd_hello(msg: WeixinMsgDTO, bot: WeixinBot) -> None:
+async def cmd_hello(msg: WeixinMsgDTO, bot) -> None:
     await bot.send_text(msg.session_id, f"你好，{msg.from_}！")
 ```
 

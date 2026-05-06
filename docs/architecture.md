@@ -20,14 +20,15 @@ src/weixin_bot/
 ├── auth.py              # QR 登录和凭证管理
 ├── messaging.py         # 消息构建和解析工具
 ├── errors.py            # 异常定义
-├── cdn/                 # CDN 媒体下载解密
-│   ├── __init__.py
-│   └── downloader.py
+├── cdn/                 # CDN 媒体加解密
+│   ├── __init__.py      # AES-128-ECB 核心函数 + 密钥解析
+│   ├── upload.py        # CDN 上传管道
+│   └── download.py      # CDN 下载 + 解密管道
 ├── media/               # 媒体文件处理
 │   ├── __init__.py
-│   ├── image.py
-│   ├── voice.py
-│   └── video.py
+│   ├── download.py      # 统一媒体下载入口（IMAGE/VOICE/FILE/VIDEO）
+│   ├── mime.py          # 文件头魔数 MIME 检测
+│   └── silk_transcode.py # SILK→WAV 音频转码（可选）
 ├── modes/               # Agent 模式系统
 │   ├── __init__.py
 │   ├── adapter.py       # AgentAdapter 抽象接口
@@ -237,7 +238,7 @@ class WeixinBotConfig:
     def resolved_state_dir(self) -> Path  # 默认 ~/.weixinbot/
 ```
 
-环境变量前缀为 `WEIXIN_*`，如 `WEIXIN_STATE_DIR`、`WEIXIN_LOG_LEVEL`。
+环境变量包含 `WEIXIN_*`（微信/渲染器/流式卡片）以及 `HERMES_*`、`OPENCODE_*`（Agent 适配器配置）。
 
 ### WeixinMonitor 消息监控
 
@@ -266,10 +267,12 @@ class WeixinMonitor:
 ~/.weixinbot/
 ├── accounts.json              # 账号索引
 ├── accounts/
-│   └── {account_id}.json      # 账号凭证 (token, baseUrl, userId)
+│   └── {normalized_id}.json   # 账号凭证 (token, baseUrl, userId)，文件名经规范化处理
 └── sync/
-    └── {account_id}.buf       # 同步缓冲区 (get_updates_buf)
+    └── {normalized_id}.buf    # 同步缓冲区 (get_updates_buf)
 ```
+
+> 注：`normalized_id` = `account_id.strip().lower().replace("@", "-").replace(".", "-")`
 
 ## 启动方式
 
@@ -292,4 +295,4 @@ python examples/echo_bot.py
 4. 扫码成功后保存凭证到 `accounts/{accountId}.json`
 5. 后续启动自动加载已保存的凭证
 
-凭证过期时会自动触发重新登录。
+会话过期（errcode=-14）时暂停轮询 1 小时并提示用户重新扫码登录（需人工重启触发登录流程）。

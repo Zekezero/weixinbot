@@ -134,10 +134,11 @@ if __name__ == "__main__":
 ## 添加自定义指令
 
 ```python
+# 接在上面的 echo bot 代码之后（已有 bot 实例）
 from weixin_bot.models import WeixinMsgDTO
 
 @bot.command("hello", description="打招呼")
-async def cmd_hello(msg: WeixinMsgDTO, bot: WeixinBot) -> None:
+async def cmd_hello(msg: WeixinMsgDTO, bot) -> None:
     await bot.send_text(msg.session_id, f"你好，{msg.from_}！")
 ```
 
@@ -201,20 +202,31 @@ class MyAdapter(AgentAdapter):
 注册适配器（参考 `app.py` 中的 `_register_adapters`）：
 
 ```python
+from weixin_bot.bot import WeixinBot
+from weixin_bot.config import WeixinBotConfig
+from weixin_bot.models import WeixinMsgDTO
 from weixin_bot.modes.manager import ModeManager
 from weixin_bot.modes.events import EventBus
+from weixin_bot.modes.renderer import RendererConfig, TextRenderer
 
+# 创建完整的 bot 实例（含渲染器）
 bus = EventBus()
 mode_manager = ModeManager(bus)
+config = WeixinBotConfig.from_env()
+bot = WeixinBot(config, mode_manager=mode_manager)
 
+# 初始化渲染器（必须，否则 Agent 的流式事件不会被发送到微信）
+async def _send_text(chat_id: str, text: str) -> None:
+    await bot.send_text(chat_id, text)
+
+renderer = TextRenderer(_send_text, bus, RendererConfig())
+
+# 注册适配器
 my_adapter = MyAdapter(bus)
 mode_manager.register_adapter(my_adapter)
 
-bot = WeixinBot(config, mode_manager=mode_manager)
-
-
 @bot.command("myagent", description="进入 MyAgent 模式")
-async def cmd_myagent(msg: WeixinMsgDTO, bot: WeixinBot) -> None:
+async def cmd_myagent(msg: WeixinMsgDTO, bot) -> None:
     if mode_manager.is_in_mode(msg.from_):
         await bot.send_text(msg.session_id, "请先 /exit 退出当前模式")
         return

@@ -9,7 +9,7 @@
 **解决**：
 - 每用户 `asyncio.Lock` 锁（`_chat_key` 粒度）
 - `_busy_users` 集合标记忙碌状态
-- 忙碌时新消息静默丢弃（不能发 ResponseEnd，会关闭正在流的卡片）
+- 忙碌时新消息静默丢弃（避免 SSE 输出交叉/状态混乱）
 
 ```python
 if user_id in self._busy_users:
@@ -64,10 +64,15 @@ if not session_id:
 
 **问题**：用户在等待权限审批时发送 `/abort`，需要同时取消权限等待和中止任务。
 
-**解决**：
-- abort 时清除 `_pending_permissions[user_id]`
-- 如果有 pending permission，先清理再发 abort 请求
-- 权限超时（30s）时也要清理并 emit ResponseError
+**当前实现**：
+- `_pending_permissions` 记录 per-user 待审批权限
+- 用户通过 `/approve` 或 `/reject` 响应
+- abort 时标记 `_aborted_sessions`，后续 SSE 事件（包括权限相关）被忽略
+- **注意**：当前实现中 abort 不会主动清理 `_pending_permissions`，且无权限等待超时机制（spec 中定义了 30s 超时，尚未实现）
+
+**待改进**：
+- abort 时应显式清理 `_pending_permissions[user_id]`
+- 添加权限等待超时定时器（30s），超时后 emit ResponseError
 
 ## 6. 工具输出中的元数据噪声
 

@@ -6,20 +6,20 @@ ilink 是微信提供的 Bot 接入协议，基于 HTTPS 长轮询实现实时�
 
 - **基础 URL**: `https://ilinkai.weixin.qq.com`
 - **CDN URL**: `https://novac2c.cdn.weixin.qq.com/c2c`
-- **认证方式**: QR 码扫描 → bot_token（持久有效）
+- **认证方式**: QR 码扫描 → bot_token（可能过期，errcode=-14 需重新登录）
 - **消息接收**: 长轮询（无需公网 IP）
 
 ## API 端点
 
 | 端点 | 方法 | 路径 | 超时 | 说明 |
 |------|------|------|------|------|
-| getupdates | POST | `/ilink/bot/getupdates` | 35s 长轮询 | 接收消息 |
+| getupdates | POST | `/ilink/bot/getupdates` | 服务端 35s 长轮询，客户端超时 45s | 接收消息 |
 | sendmessage | POST | `/ilink/bot/sendmessage` | 15s | 发送消息 |
 | getuploadurl | POST | `/ilink/bot/getuploadurl` | 15s | 获取 CDN 预签名上传地址 |
 | getconfig | POST | `/ilink/bot/getconfig` | 10s | 获取配置（typing_ticket） |
 | sendtyping | POST | `/ilink/bot/sendtyping` | 10s | 发送输入状态指示器 |
 | get_bot_qrcode | GET | `/ilink/bot/get_bot_qrcode` | 5s | 获取登录二维码 |
-| get_qrcode_status | GET | `/ilink/bot/get_qrcode_status` | 35s 长轮询 | 查询扫码状态 |
+| get_qrcode_status | GET | `/ilink/bot/get_qrcode_status` | 服务端 35s 长轮询，客户端超时 45s | 查询扫码状态 |
 
 ## 标准请求头
 
@@ -189,8 +189,8 @@ GET /ilink/bot/get_qrcode_status?qrcode={qrcode}
 
 - 每条入站消息携带 `context_token`
 - 发送回复时**必须**在 `msg.context_token` 字段回传对应用户的 token
-- 按 `accountId:userId` 缓存，有效期约 24 小时
-- 无 context_token 则无法发送消息给该用户
+- 按 `accountId:userId` 缓存（进程内无 TTL，收到入站消息时更新）
+- 发送时尽量回传 context_token，若为空可能导致服务端拒绝（框架不强制校验）
 
 ## CDN 加密机制
 
