@@ -1,174 +1,225 @@
-# weixinbot 开发指南
+# 开发指南
 
-## 环境准备
+本文档介绍如何搭建开发环境、运行机器人以及扩展功能。
 
-### 系统要求
+## 环境要求
 
-- Python 3.10 或更高版本
-- 支持 asyncio 的运行环境
-- 稳定的网络连接（用于 ilink API 通信）
+- Python 3.10+
+- Git
 
-### 安装步骤
+## 开发环境搭建
 
-1. 克隆代码仓库：
+### 1. 克隆仓库
+
 ```bash
-git clone <repository-url>
+git clone https://github.com/user/weixinbot
 cd weixinbot
 ```
 
-2. 创建虚拟环境：
+### 2. 创建虚拟环境
+
 ```bash
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# 或
-venv\Scripts\activate  # Windows
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+
+# macOS/Linux
+source .venv/bin/activate
 ```
 
-3. 安装依赖（开发模式）：
+### 3. 安装依赖
+
 ```bash
 pip install -e ".[dev]"
 ```
 
-## 运行项目
+这会安装核心依赖和开发依赖（pytest、ruff、mypy 等）。
 
-### 命令行启动
+### 4. 配置环境变量
 
-安装后，直接使用命令：
+复制示例配置：
+
 ```bash
-weixinbot
+cp .env.example .env
 ```
 
-或使用 Python 模块方式：
+编辑 `.env` 文件，根据需要配置：
+
+```env
+# 微信 ilink 配置
+WEIXIN_STATE_DIR=~/.weixinbot
+WEIXIN_LOG_LEVEL=INFO
+
+# Hermes Agent（可选）
+HERMES_API_KEY=your-hermes-api-key
+HERMES_BASE_URL=https://api.hermes.example.com
+
+# OpenCode Agent（可选）
+OPENCODE_BASE_URL=http://localhost:29107
+OPENCODE_PROJECT_DIR=/path/to/project
+
+# OpenAI Agent（示例用）
+OPENAI_API_KEY=sk-xxx
+OPENAI_MODEL=gpt-4o
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# 渲染器配置
+WEIXIN_RENDERER_TYPE=text
+WEIXIN_RENDERER_PUSH_INTERVAL=3.0
+WEIXIN_RENDERER_PUSH_MIN_CHARS=2000
+WEIXIN_RENDERER_MAX_MESSAGE_CHARS=3000
+```
+
+## 运行机器人
+
+### 方式1: 模块运行
+
 ```bash
 python -m weixin_bot
 ```
 
-### 配置文件
+### 方式2: 命令行入口
 
-创建 `.env` 文件在项目根目录：
-
-```env
-# 微信账号配置
-WEIXIN_UIN=your_uin
-WEIXIN_TOKEN=your_token
-
-# 可选配置
-LOG_LEVEL=INFO
-DATA_DIR=~/.weixinbot
-WHITELIST_USERS=wxid_xxx,wxid_yyy
+```bash
+weixinbot
 ```
 
-也可以通过环境变量设置，优先级高于 `.env` 文件。
+### 方式3: 运行示例
 
-## 创建自定义机器人
+```bash
+# 回声机器人
+python examples/echo_bot.py
 
-### Echo Bot 示例
+# OpenAI 对话机器人
+python examples/openai_bot.py
+```
 
-创建一个简单的回声机器人：
+首次运行会显示二维码，使用微信扫码登录。
+
+## 项目结构
+
+```
+weixinbot/
+├── src/weixin_bot/      # 核心源码
+├── examples/            # 示例代码
+├── tests/               # 测试代码
+├── docs/                # 文档
+├── pyproject.toml       # 项目配置
+└── .env.example         # 环境变量示例
+```
+
+## 编写 Echo Bot
+
+最简单的机器人示例：
 
 ```python
-# echo_bot.py
-import asyncio
-from weixinbot import WeixinBot
-from weixinbot.messaging import IncomingEvent
+from weixin_bot.bot import WeixinBot
+from weixin_bot.config import WeixinBotConfig
+from weixin_bot.models import IncomingEvent
 
-bot = WeixinBot()
+bot = WeixinBot(WeixinBotConfig.from_env())
 
-@bot.handler()
-async def echo_handler(event: IncomingEvent):
-    """回声处理器：重复用户发送的内容"""
-    if event.content:
-        await event.reply(f"你说：{event.content}")
+
+@bot.on_message()
+async def echo(event: IncomingEvent) -> None:
+    msg = event.as_message()
+    await bot.reply(event, f"你说: {msg.text}")
+
 
 if __name__ == "__main__":
-    asyncio.run(bot.run())
+    bot.run()
 ```
 
-运行：
-```bash
-python echo_bot.py
-```
-
-### 命令处理器示例
+## 添加自定义指令
 
 ```python
-from weixinbot.messaging import CommandRouter
+from weixin_bot.models import WeixinMsgDTO
 
-@CommandRouter.register("/hello")
-async def hello_command(event):
-    await event.reply("你好！我是 weixinbot。")
-
-@CommandRouter.register("/help")
-async def help_command(event):
-    help_text = """
-可用命令：
-/hello - 打招呼
-/help - 显示帮助
-/exit - 退出当前模式
-    """
-    await event.reply(help_text)
+@bot.command("hello", description="打招呼")
+async def cmd_hello(msg: WeixinMsgDTO, bot: WeixinBot) -> None:
+    await bot.send_text(msg.session_id, f"你好，{msg.from_}！")
 ```
 
-## 添加 Agent 适配器
+指令参数：
 
-Agent 适配器用于接入外部 AI 服务（如 OpenAI、Claude 等）。
+- `name`: 指令名称（不含 `/` 前缀）
+- `description`: 帮助文本中显示的描述
+- `p2p_only`: 仅私聊可用
+- `group_only`: 仅群聊可用（当前微信不支持）
+- `aliases`: 别名列表
 
-### 实现适配器
+## 添加新的 Agent 适配器
+
+实现 `AgentAdapter` 抽象类：
 
 ```python
-from weixinbot.modes import AgentAdapter, Session
+from weixin_bot.modes.adapter import AgentAdapter, MessageContext
+from weixin_bot.modes.events import EventBus, ResponseStart, ResponseChunk, ResponseEnd
 
-class MyAIAdapter(AgentAdapter):
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-    
-    async def create_session(self, user_id: str) -> Session:
-        """创建新会话"""
-        return Session(
-            user_id=user_id,
-            context={"messages": []}
-        )
-    
-    async def send(self, session: Session, message: str) -> str:
-        """发送消息并获取 AI 回复"""
-        # 调用你的 AI 服务 API
-        session.context["messages"].append({
-            "role": "user", "content": message
-        })
-        
-        # 这里调用实际的 AI API
-        reply = await call_your_ai_api(
-            self.api_key, 
-            session.context["messages"]
-        )
-        
-        session.context["messages"].append({
-            "role": "assistant", "content": reply
-        })
-        return reply
-    
-    async def destroy_session(self, session: Session):
-        """销毁会话，清理资源"""
-        session.context.clear()
+class MyAdapter(AgentAdapter):
+    name = "myagent"
+    display_name = "My Agent"
+
+    def __init__(self, bus: EventBus) -> None:
+        super().__init__(bus)
+        self._sessions: dict[str, str] = {}
+
+    async def create_session(self) -> str:
+        # 创建会话，返回 session_id
+        import uuid
+        session_id = str(uuid.uuid4())
+        self._sessions[session_id] = "active"
+        return session_id
+
+    async def send(
+        self,
+        session_id: str,
+        message: str,
+        context: MessageContext,
+        *,
+        user_id: str,
+    ) -> str:
+        # 发送消息到 Agent
+        # 通过 EventBus 发射流式事件
+        await self._bus.emit(ResponseStart(user_id=user_id, mode=self.name,
+                                           session_id=session_id, chat_id=context.chat_id))
+
+        # 模拟流式响应
+        response_text = f"收到: {message}"
+        await self._bus.emit(ResponseChunk(user_id=user_id, mode=self.name,
+                                           session_id=session_id, text=response_text))
+
+        await self._bus.emit(ResponseEnd(user_id=user_id, mode=self.name,
+                                         session_id=session_id, full_text=response_text))
+        return response_text
+
+    async def destroy_session(self, session_id: str) -> None:
+        self._sessions.pop(session_id, None)
 ```
 
-### 注册适配器
+注册适配器（参考 `app.py` 中的 `_register_adapters`）：
 
 ```python
-from weixinbot.modes import ModeManager
+from weixin_bot.modes.manager import ModeManager
+from weixin_bot.modes.events import EventBus
 
-# 创建适配器实例
-my_adapter = MyAIAdapter(api_key="your-api-key")
+bus = EventBus()
+mode_manager = ModeManager(bus)
 
-# 注册到 ModeManager
-mode_manager = ModeManager()
-mode_manager.register_adapter("myai", my_adapter)
+my_adapter = MyAdapter(bus)
+mode_manager.register_adapter(my_adapter)
 
-# 用户输入 /myai 命令时进入该模式
-@CommandRouter.register("/myai")
-async def enter_myai_mode(event):
-    await mode_manager.enter_mode(event.user_id, "myai")
-    await event.reply("已进入 MyAI 模式，直接发送消息开始对话。")
+bot = WeixinBot(config, mode_manager=mode_manager)
+
+
+@bot.command("myagent", description="进入 MyAgent 模式")
+async def cmd_myagent(msg: WeixinMsgDTO, bot: WeixinBot) -> None:
+    if mode_manager.is_in_mode(msg.from_):
+        await bot.send_text(msg.session_id, "请先 /exit 退出当前模式")
+        return
+    sid = await mode_manager.enter_mode(msg.from_, "myagent")
+    await bot.send_text(msg.session_id, f"已进入 MyAgent 模式 (会话 #{sid[:8]})")
 ```
 
 ## 测试
@@ -176,67 +227,127 @@ async def enter_myai_mode(event):
 ### 运行测试
 
 ```bash
-# 运行所有测试
 pytest
-
-# 运行特定测试文件
-pytest tests/test_messaging.py
-
-# 带覆盖率报告
-pytest --cov=weixinbot --cov-report=html
 ```
 
-### 测试依赖
-
-- **pytest**：测试框架
-- **pytest-asyncio**：支持异步测试
-- **pytest-httpx**：模拟 HTTP 请求
-
-### 异步测试示例
+### 测试结构
 
 ```python
 import pytest
-from weixinbot.messaging import IncomingEvent
+from weixin_bot.commands import CommandRouter
+from weixin_bot.models import WeixinMsgDTO
+
+
+@pytest.fixture
+def router():
+    return CommandRouter()
+
 
 @pytest.mark.asyncio
-async def test_echo_handler():
-    event = IncomingEvent(
-        content="测试消息",
-        from_user="wxid_test",
-        msg_id="123"
-    )
-    
-    # 模拟回复
-    replies = []
-    event.reply = lambda x: replies.append(x)
-    
-    await echo_handler(event)
-    
-    assert len(replies) == 1
-    assert "测试消息" in replies[0]
+async def test_command_registration(router):
+    @router.command("test", description="测试指令")
+    async def cmd_test(msg, bot):
+        await bot.send_text(msg.session_id, "ok")
+
+    assert "test" in router.registered_commands
 ```
 
-### 模拟 HTTP 请求
+### 常用测试模式
+
+Mock 消息对象：
 
 ```python
-import pytest
-from pytest_httpx import HTTPXMock
+from unittest.mock import AsyncMock
 
-@pytest.mark.asyncio
-async def test_api_call(httpx_mock: HTTPXMock):
-    httpx_mock.add_response(
-        url="https://ilinkai.weixin.qq.com/cgi-bin/getupdates",
-        json={"errcode": 0, "data": {"item_list": []}}
-    )
-    
-    # 你的测试代码
-    result = await api.get_updates()
-    assert result.errcode == 0
+mock_msg = WeixinMsgDTO(
+    from_="user123",
+    session_id="session456",
+    text="/test hello",
+    is_p2p=True,
+    is_group=False,
+)
+
+mock_bot = AsyncMock()
+mock_bot.send_text = AsyncMock()
+
+await router.try_handle(mock_msg, mock_bot)
+mock_bot.send_text.assert_called_once()
+```
+
+## 代码规范
+
+使用 ruff 进行代码检查和格式化：
+
+```bash
+# 检查
+ruff check src/
+
+# 格式化
+ruff format src/
+
+# 类型检查
+mypy src/
+```
+
+配置位于 `pyproject.toml`：
+
+```toml
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
 ```
 
 ## 调试技巧
 
-1. **启用 DEBUG 日志**：设置 `LOG_LEVEL=DEBUG` 查看详细请求/响应
-2. **使用断点**：在关键位置添加 `import pdb; pdb.set_trace()`
-3. **查看存储文件**：检查 `~/.weixinbot/logs/` 中的日志文件
-4. **模拟消息**：使用测试脚本直接构造 `IncomingEvent` 进行调试
+### 启用调试日志
+
+```env
+WEIXIN_LOG_LEVEL=DEBUG
+```
+
+或在代码中：
+
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+```
+
+### 查看状态文件
+
+```bash
+# 账号凭证
+ls ~/.weixinbot/accounts/
+cat ~/.weixinbot/accounts/{account_id}.json
+
+# 同步缓冲区
+ls ~/.weixinbot/sync/
+```
+
+## 常见问题
+
+### 扫码后无响应
+
+检查网络连接，确保能访问 ilink API 服务器。
+
+### 消息重复处理
+
+WeixinMonitor 内置了消息去重（LRU 缓存，30 分钟 TTL），通常无需处理。
+
+### 会话过期
+
+出现 `errcode=-14` 时会自动暂停 1 小时，需要重新扫码登录。
+
+## 发布新版本
+
+1. 更新 `pyproject.toml` 中的版本号
+2. 更新 `CHANGELOG.md`
+3. 创建 git tag
+4. 构建并上传
+
+```bash
+python -m build
+python -m twine upload dist/*
+```
