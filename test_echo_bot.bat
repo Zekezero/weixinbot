@@ -1,0 +1,1 @@
+.venv\scripts\python.exe examples\echo_bot.py

@@ -1,0 +1,1 @@
+opencode attach http://localhost:4096
